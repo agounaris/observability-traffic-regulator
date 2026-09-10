@@ -1,0 +1,15 @@
+# Go build/test output
+/bin/
+/dist/
+*.test
+coverage.out
+
+# Local example state
+examples/data/
+examples/.env
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
+

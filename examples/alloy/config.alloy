@@ -1,0 +1,32 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+prometheus.remote_write "regulator" {
+  endpoint {
+    url = "http://regulator:8000/api/v1/write"
+  }
+}
+
+// Export CPU and memory metrics from the environment where Alloy runs.
+// This exposes metrics such as node_cpu_seconds_total and node_memory_*.
+prometheus.exporter.unix "system" {}
+
+prometheus.scrape "system" {
+  scrape_interval = "10s"
+  targets         = prometheus.exporter.unix.system.targets
+  forward_to      = [prometheus.remote_write.regulator.receiver]
+}
+
+// Scrape Prometheus' own metrics as a second source of traffic.
+prometheus.scrape "prometheus" {
+  targets = [
+    {
+      __address__ = "prometheus:9090",
+    },
+  ]
+
+  scrape_interval = "10s"
+  forward_to      = [prometheus.remote_write.regulator.receiver]
+}

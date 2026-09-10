@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: regulator-gossip
+type: Opaque
+stringData:
+  # Replace this before deploying. Use a long random value.
+  secret: replace-with-a-long-random-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: regulator
+  labels:
+    app.kubernetes.io/name: traffic-regulator
+spec:
+  selector:
+    app.kubernetes.io/name: traffic-regulator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: regulator-headless
+  labels:
+    app.kubernetes.io/name: traffic-regulator
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: traffic-regulator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: regulator
+  labels:
+    app.kubernetes.io/name: traffic-regulator
+spec:
+  serviceName: regulator-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traffic-regulator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-regulator
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: regulator
+          # Replace with your pushed image.
+          image: your-registry/otel-traffic-regulator:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-listen=:8080"
+            # Replace with your Mimir, Thanos Receive, or other remote-write URL.
+            - "-upstream=http://mimir-nginx/api/v1/push"
+            # Set this to an OTLP/HTTP metrics endpoint when using OTLP input.
+            # - "-otlp-upstream=http://otel-gateway:4318/v1/metrics"
+            - "-node-id=$(POD_NAME)"
+            - "-gossip-peers=http://regulator-0.regulator-headless.$(POD_NAMESPACE).svc.cluster.local:8080,http://regulator-1.regulator-headless.$(POD_NAMESPACE).svc.cluster.local:8080,http://regulator-2.regulator-headless.$(POD_NAMESPACE).svc.cluster.local:8080"
+            - "-gossip-secret=$(GOSSIP_SECRET)"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: GOSSIP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: regulator-gossip
+                  key: secret
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "8Gi"

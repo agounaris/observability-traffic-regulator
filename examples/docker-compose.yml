@@ -1,0 +1,42 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --enable-feature=remote-write-receiver
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  regulator:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command:
+      - -listen
+      - :8000
+      - -upstream
+      - http://prometheus:9090/api/v1/write
+    depends_on:
+      - prometheus
+    ports:
+      - "8000:8000"
+
+  alloy:
+    image: grafana/alloy:latest
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+    depends_on:
+      - regulator
+    ports:
+      - "12345:12345"
+
+volumes:
+  prometheus-data:
+
